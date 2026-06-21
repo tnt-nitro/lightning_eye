@@ -78,7 +78,8 @@ class BuzzerController:
         self._thread.start()
 
     def boot_complete(self) -> None:
-        self._run_pattern([(0.12, 0.18), (0.12, 0.18)])
+        # Single very short tick at startup (~50 ms total)
+        self._run_pattern([(0.05, 0.0)])
 
     def zone_10_enter(self) -> None:
         self._run_pattern([(0.10, 0.12)] * 10)
