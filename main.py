@@ -57,7 +57,7 @@ def ensure_venv() -> Path:
 
 
 def install_system_packages() -> None:
-    packages = ["git", "python3-venv", "python3-pip", "python3-tk", "i2c-tools", "x11-utils"]
+    packages = ["git", "python3-venv", "python3-pip", "python3-tk", "i2c-tools", "x11-utils", "libgpiod2"]
     if shutil.which("apt-get"):
         try:
             run(["sudo", "apt-get", "update"], check=False)
