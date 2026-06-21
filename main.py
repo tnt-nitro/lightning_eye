@@ -57,14 +57,18 @@ def ensure_venv() -> Path:
 
 
 def install_system_packages() -> None:
-    packages = ["git", "python3-venv", "python3-pip",
-                "python3-tk", "i2c-tools", "x11-utils", "libgpiod2"]
+    packages = [
+        "git", "python3-venv", "python3-pip", "python3-tk", "i2c-tools", "x11-utils",
+        "gpiod", "libgpiod3", "python3-libgpiod",
+    ]
     if shutil.which("apt-get"):
         try:
             run(["sudo", "apt-get", "update"], check=False)
-            run(["sudo", "apt-get", "install", "-y", *packages], check=False)
+            result = run(["sudo", "apt-get", "install", "-y", *packages], check=False)
+            if result.returncode != 0:
+                run(["sudo", "apt-get", "install", "-y", "gpiod", "libgpiod2"], check=False)
         except (subprocess.CalledProcessError, FileNotFoundError):
-            log("Hinweis: apt-Pakete manuell installieren (git, python3-venv, python3-tk, i2c-tools)")
+            log("Hinweis: apt-Pakete manuell installieren (git, python3-venv, python3-tk, i2c-tools, gpiod)")
 
 
 def setup_pi_permissions() -> None:
