@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 from app.blocks import BlockManager
 from app.boot_reason import read_boot_reason, write_boot_reason
 from app.buzzer_controller import BuzzerController
-from app.config_loader import get_data_dir, get_gpio, load_config
+from app.config_loader import get_data_dir, get_gpio, load_config, parse_int
 from app.database import Database
 from app.dht_reader import DhtReader
 from app.gui.main_window import MainWindow
@@ -198,7 +198,7 @@ class Application:
         gpio = get_gpio(self.config)
         sensor_cfg = self.config.get("sensor", {})
         self.sensor = AS3935(
-            address=int(sensor_cfg.get("i2c_address", 0x03)),
+            address=parse_int(sensor_cfg.get("i2c_address"), 0x03),
             irq_pin=gpio["irq"],
             indoor=bool(sensor_cfg.get("indoor_mode", True)),
             on_event=self._on_event,

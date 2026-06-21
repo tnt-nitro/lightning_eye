@@ -71,15 +71,24 @@ def _parse_simple_yaml(text: str) -> dict[str, Any]:
                     if "." in value:
                         parent[key] = float(value)
                     else:
-                        parent[key] = int(value)
+                        parent[key] = int(value, 0)
                 except ValueError:
                     parent[key] = value.strip('"').strip("'")
 
     return root
 
 
+def parse_int(value: Any, default: int = 0) -> int:
+    """Parse int from decimal or hex strings (e.g. 3, '3', '0x03')."""
+    if value is None:
+        return default
+    if isinstance(value, int):
+        return value
+    return int(str(value).strip(), 0)
+
+
 def get_gpio(config: dict[str, Any]) -> dict[str, int]:
-    return {k: int(v) for k, v in config.get("gpio", {}).items()}
+    return {k: parse_int(v) for k, v in config.get("gpio", {}).items()}
 
 
 def get_data_dir(config: dict[str, Any]) -> Path:

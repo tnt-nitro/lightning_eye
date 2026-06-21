@@ -32,5 +32,5 @@ http:
   port: 8765
 
 sensor:
-  i2c_address: 0x03
+  i2c_address: 3
   indoor_mode: true
