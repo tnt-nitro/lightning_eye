@@ -17,6 +17,7 @@ from app.blocks import BlockManager
 
 import logging
 import os
+import signal
 import sys
 import threading
 import time
@@ -257,10 +258,10 @@ class Application:
 
     def shutdown(self) -> None:
         self.buzzer.silence()
+        self.led.all_off()
         if self.sensor:
             self.sensor.stop()
         self.dht.stop()
-        self.led.stop()
         self.buzzer.close()
 
 
@@ -268,11 +269,24 @@ def main() -> None:
     setup_logging()
     logger.info("Lightning Eye starting (root=%s, DISPLAY=%s)",
                 ROOT, os.environ.get("DISPLAY"))
+    app: Application | None = None
+
+    def _signal_shutdown(signum: int, _frame: object) -> None:
+        logger.info("Signal %s — shutdown", signum)
+        if app is not None:
+            app.shutdown()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _signal_shutdown)
+    signal.signal(signal.SIGINT, _signal_shutdown)
+
     try:
         app = Application()
         app.start()
     except Exception:
         logger.exception("Fatal error — see logs/app.log")
+        if app is not None:
+            app.shutdown()
         raise
 
 

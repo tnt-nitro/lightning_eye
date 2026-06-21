@@ -15,6 +15,7 @@ export GPIOZERO_PIN_FACTORY="${GPIOZERO_PIN_FACTORY:-lgpio}"
 
 # Stop stale instance (crashed runs block HTTP port / GPIO)
 pkill -f "[.]venv/bin/python -m app.run" 2>/dev/null || true
+"${INSTALL_DIR}/.venv/bin/python" -m app.leds_off 2>/dev/null || true
 sleep 1
 
 # Wait up to 2 minutes for X/Wayland session

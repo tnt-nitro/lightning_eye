@@ -144,7 +144,8 @@ class AS3935:
             if not interrupt:
                 return None
             int_val = self._read_reg(_REG_INT)
-            reason = InterruptType(int_val & 0x03) if (int_val & 0x08) else None
+            reason = InterruptType(int_val & 0x03) if (
+                int_val & 0x08) else None
 
         if reason == InterruptType.NOISE:
             return LightningEvent("noise", None, None, None, None)
@@ -188,7 +189,8 @@ class AS3935:
         self._irq_input = DigitalInputDevice(self.irq_pin, pull_up=False)
         self._irq_input.when_activated = self._handle_irq
         self._running = True
-        self._thread = threading.Thread(target=self._poll_loop, daemon=True, name="as3935-poll")
+        self._thread = threading.Thread(
+            target=self._poll_loop, daemon=True, name="as3935-poll")
         self._thread.start()
         logger.info("AS3935 IRQ listener started on GPIO %s", self.irq_pin)
 

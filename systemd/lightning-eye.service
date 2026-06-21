@@ -9,6 +9,7 @@ WorkingDirectory=%h/lightning_eye
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=%h/.Xauthority
 ExecStart=%h/lightning_eye/start.sh
+ExecStopPost=%h/lightning_eye/.venv/bin/python -m app.leds_off
 Restart=always
 RestartSec=10
 

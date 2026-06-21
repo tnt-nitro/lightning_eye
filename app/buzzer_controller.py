@@ -73,7 +73,8 @@ class BuzzerController:
             self.silence()
 
         self._cancel.clear()
-        self._thread = threading.Thread(target=worker, daemon=False, name="buzzer")
+        self._thread = threading.Thread(
+            target=worker, daemon=False, name="buzzer")
         self._thread.start()
 
     def boot_complete(self) -> None:

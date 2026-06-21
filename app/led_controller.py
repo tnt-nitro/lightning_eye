@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
+import os
 import threading
 import time
 from enum import Enum, auto
@@ -10,9 +12,12 @@ from enum import Enum, auto
 logger = logging.getLogger(__name__)
 
 try:
-    from gpiozero import LED
+    from gpiozero import LED, OutputDevice
 except ImportError:
     LED = None  # type: ignore
+    OutputDevice = None  # type: ignore
+
+_active_controller: "LedController | None" = None
 
 
 class LedState(Enum):
@@ -57,7 +62,47 @@ class LedController:
     def set_progress_callback(self, cb: object) -> None:
         self._progress_callback = cb
 
+    @staticmethod
+    def force_all_off(red: int, yellow: int, green: int) -> None:
+        """Force traffic-light pins LOW (works even without a running app)."""
+        os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
+        if OutputDevice is None:
+            return
+        for pin in (red, yellow, green):
+            try:
+                dev = OutputDevice(pin, active_high=True, initial_value=False)
+                dev.off()
+                dev.close()
+            except Exception as exc:
+                logger.debug("force_all_off pin %s: %s", pin, exc)
+
+    def all_off(self) -> None:
+        """Stop patterns and turn all LEDs off."""
+        global _active_controller
+        self._stop.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=3)
+        for led in (self._red_led, self._yellow_led, self._green_led):
+            if led is not None:
+                try:
+                    led.off()
+                except Exception:
+                    pass
+        self.force_all_off(self.red, self.yellow, self.green)
+        for led in (self._red_led, self._yellow_led, self._green_led):
+            if led is not None:
+                try:
+                    led.close()
+                except Exception:
+                    pass
+        self._red_led = None
+        self._yellow_led = None
+        self._green_led = None
+        if _active_controller is self:
+            _active_controller = None
+
     def start(self) -> None:
+        global _active_controller
         if LED is None:
             logger.warning("GPIO unavailable, LED controller running in noop mode")
             return
@@ -65,20 +110,12 @@ class LedController:
         self._yellow_led = LED(self.yellow)
         self._green_led = LED(self.green)
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="led-controller")
+        _active_controller = self
+        self._thread = threading.Thread(target=self._run, daemon=False, name="led-controller")
         self._thread.start()
 
     def stop(self) -> None:
-        self._stop.set()
-        if self._thread:
-            self._thread.join(timeout=2)
-        for led in (self._red_led, self._yellow_led, self._green_led):
-            if led is not None:
-                led.off()
-                led.close()
-        self._red_led = None
-        self._yellow_led = None
-        self._green_led = None
+        self.all_off()
 
     def activate(self, state: LedState) -> None:
         with self._lock:
@@ -114,8 +151,11 @@ class LedController:
         while not self._stop.is_set():
             state = self._active_state()
             if state == LedState.READY:
+                if self._stop.is_set():
+                    break
                 self._set_pins(False, False, True)
-                self._sleep(1.0)
+                if not self._sleep(1.0):
+                    break
             elif state == LedState.BOOT_INSTALL:
                 self._pattern_boot_install()
             elif state == LedState.INSTALL_STEP_OK:
@@ -136,7 +176,8 @@ class LedController:
     def _pattern_boot_install(self) -> None:
         progress = 0.5
         if self._progress_callback is not None:
-            progress = float(self._progress_callback())  # type: ignore[operator]
+            # type: ignore[operator]
+            progress = float(self._progress_callback())
         interval = max(0.2, 1.5 - progress)
         self._set_pins(False, True, False)
         if not self._sleep(interval):
@@ -224,6 +265,17 @@ class LedController:
                 time.sleep(0.15)
                 self._set_pins(False, False, False)
                 time.sleep(0.3)
+
+
+def _atexit_leds_off() -> None:
+    if _active_controller is not None:
+        _active_controller.all_off()
+    else:
+        # Default Pi wiring — fallback if process dies without controller ref
+        LedController.force_all_off(17, 27, 22)
+
+
+atexit.register(_atexit_leds_off)
 
 
 def run_boot_sequence(led: LedController, steps: int = 5) -> None:

@@ -103,6 +103,7 @@ WorkingDirectory={INSTALL_DIR}
 Environment=DISPLAY=:0
 Environment=XAUTHORITY={Path.home()}/.Xauthority
 ExecStart={start_script}
+ExecStopPost={INSTALL_DIR / ".venv/bin/python"} -m app.leds_off
 Restart=always
 RestartSec=10
 
