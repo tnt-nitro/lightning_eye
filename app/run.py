@@ -1,6 +1,19 @@
 """Lightning Eye main application entry point."""
 
 from __future__ import annotations
+from app.watchdog import Watchdog
+from app.updater import Updater
+from app.stats import distance_trend, snapshot
+from app.sensor_as3935 import AS3935, LightningEvent, is_relevant
+from app.led_controller import LedController, LedState
+from app.http_status import StatusServer
+from app.gui.main_window import MainWindow
+from app.dht_reader import DhtReader
+from app.database import Database
+from app.config_loader import get_data_dir, get_gpio, load_config, parse_int
+from app.buzzer_controller import BuzzerController
+from app.boot_reason import read_boot_reason, write_boot_reason
+from app.blocks import BlockManager
 
 import logging
 import os
@@ -17,20 +30,6 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
 os.environ.setdefault("DISPLAY", ":0")
 os.environ.setdefault("XAUTHORITY", str(Path.home() / ".Xauthority"))
-
-from app.blocks import BlockManager
-from app.boot_reason import read_boot_reason, write_boot_reason
-from app.buzzer_controller import BuzzerController
-from app.config_loader import get_data_dir, get_gpio, load_config, parse_int
-from app.database import Database
-from app.dht_reader import DhtReader
-from app.gui.main_window import MainWindow
-from app.http_status import StatusServer
-from app.led_controller import LedController, LedState
-from app.sensor_as3935 import AS3935, LightningEvent, is_relevant
-from app.stats import distance_trend, snapshot
-from app.updater import Updater
-from app.watchdog import Watchdog
 
 
 def setup_logging() -> None:
@@ -57,14 +56,17 @@ class Application:
         self.install_dir = ROOT
         self.config["install_dir"] = str(ROOT)
         self.data_dir = get_data_dir(self.config)
-        self.version = (self.install_dir / "VERSION").read_text(encoding="utf-8").strip()
+        self.version = (self.install_dir /
+                        "VERSION").read_text(encoding="utf-8").strip()
         self.db = Database(self.data_dir / "events.db")
         self.block_mgr = BlockManager(
             self.db,
-            timeout_minutes=int(self.config.get("blocks", {}).get("timeout_minutes", 5)),
+            timeout_minutes=int(self.config.get(
+                "blocks", {}).get("timeout_minutes", 5)),
         )
         gpio = get_gpio(self.config)
-        self.led = LedController(gpio["led_red"], gpio["led_yellow"], gpio["led_green"])
+        self.led = LedController(
+            gpio["led_red"], gpio["led_yellow"], gpio["led_green"])
         self.buzzer = BuzzerController(gpio["buzzer"])
         self.dht = DhtReader(gpio["dht"])
         self.sensor: AS3935 | None = None
@@ -110,7 +112,8 @@ class Application:
         dist = event.distance_km or 999
 
         with self._state_lock:
-            self._alert_until = datetime.now(timezone.utc) + timedelta(minutes=alert_min)
+            self._alert_until = datetime.now(
+                timezone.utc) + timedelta(minutes=alert_min)
             self.led.deactivate(LedState.READY)
             self.led.activate(LedState.ALERT)
 
@@ -228,13 +231,15 @@ class Application:
         Updater(
             install_dir=self.install_dir,
             db=self.db,
-            check_interval_hours=float(update_cfg.get("check_interval_hours", 6)),
+            check_interval_hours=float(
+                update_cfg.get("check_interval_hours", 6)),
             defer_minutes=int(update_cfg.get("defer_minutes", 60)),
             on_before_restart=lambda r: self._write_boot(r),
         ).start()
 
         if reason in ("install", "update"):
             self.buzzer.boot_complete()
+            write_boot_reason(self.data_dir, "running")
 
         gui = MainWindow(
             db=self.db,
@@ -251,6 +256,7 @@ class Application:
             self.shutdown()
 
     def shutdown(self) -> None:
+        self.buzzer.silence()
         if self.sensor:
             self.sensor.stop()
         self.dht.stop()
@@ -260,7 +266,8 @@ class Application:
 
 def main() -> None:
     setup_logging()
-    logger.info("Lightning Eye starting (root=%s, DISPLAY=%s)", ROOT, os.environ.get("DISPLAY"))
+    logger.info("Lightning Eye starting (root=%s, DISPLAY=%s)",
+                ROOT, os.environ.get("DISPLAY"))
     try:
         app = Application()
         app.start()
