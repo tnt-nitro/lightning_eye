@@ -30,20 +30,70 @@ def log(msg: str) -> None:
     print(f"[lightning_eye] {msg}", flush=True)
 
 
+def safe_cwd() -> None:
+    """Always use a valid working directory (avoids git errors after rmdir)."""
+    home = Path.home()
+    home.mkdir(parents=True, exist_ok=True)
+    os.chdir(home)
+
+
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
     log(f"$ {' '.join(cmd)}")
+    if cwd is None:
+        cwd = Path.home()
     return subprocess.run(cmd, cwd=cwd, check=check)
 
 
+def _preserve_user_files() -> dict[str, Path]:
+    """Backup data/logs before re-cloning a broken install."""
+    preserved: dict[str, Path] = {}
+    backup_root = Path.home() / ".lightning_eye_backup"
+    if backup_root.exists():
+        shutil.rmtree(backup_root, ignore_errors=True)
+    backup_root.mkdir(parents=True, exist_ok=True)
+    for name in ("data", "logs", ".bootstrap_done"):
+        src = INSTALL_DIR / name
+        if not src.exists():
+            continue
+        dest = backup_root / name
+        if src.is_dir():
+            shutil.copytree(src, dest)
+        else:
+            shutil.copy2(src, dest)
+        preserved[name] = dest
+    return preserved
+
+
+def _restore_user_files(preserved: dict[str, Path]) -> None:
+    for name, src in preserved.items():
+        dest = INSTALL_DIR / name
+        if src.is_dir():
+            shutil.copytree(src, dest, dirs_exist_ok=True)
+        else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+    backup_root = Path.home() / ".lightning_eye_backup"
+    if backup_root.exists():
+        shutil.rmtree(backup_root, ignore_errors=True)
+
+
 def ensure_git_repo() -> None:
+    safe_cwd()
     if (INSTALL_DIR / ".git").exists():
         run(["git", "fetch", "origin"], cwd=INSTALL_DIR)
         run(["git", "reset", "--hard", "origin/main"], cwd=INSTALL_DIR)
-    else:
-        INSTALL_DIR.parent.mkdir(parents=True, exist_ok=True)
-        if INSTALL_DIR.exists() and not any(INSTALL_DIR.iterdir()):
-            INSTALL_DIR.rmdir()
-        run(["git", "clone", REPO_URL, str(INSTALL_DIR)])
+        return
+
+    INSTALL_DIR.parent.mkdir(parents=True, exist_ok=True)
+    preserved: dict[str, Path] = {}
+    if INSTALL_DIR.exists():
+        log("WARN: ~/lightning_eye existiert ohne .git — Klone neu (Daten werden behalten)")
+        preserved = _preserve_user_files()
+        shutil.rmtree(INSTALL_DIR, ignore_errors=True)
+
+    run(["git", "clone", REPO_URL, str(INSTALL_DIR)], cwd=Path.home())
+    if preserved:
+        _restore_user_files(preserved)
 
 
 def ensure_venv() -> Path:
@@ -173,6 +223,7 @@ def reboot_system() -> None:
 
 
 def main() -> None:
+    safe_cwd()
     log("Bootstrap startet")
     install_system_packages()
     ensure_git_repo()
