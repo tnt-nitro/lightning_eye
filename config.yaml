@@ -1,0 +1,36 @@
+repo_url: https://github.com/tnt-nitro/lightning_eye
+install_dir: ~/lightning_eye
+
+relevance:
+  max_distance_km: 40
+  min_energy: 0
+  require_lightning: true
+
+blocks:
+  timeout_minutes: 5
+
+zones:
+  yellow_km: 20
+  red_km: 10
+
+alert:
+  active_minutes: 60
+
+update:
+  check_interval_hours: 6
+  defer_minutes: 60
+
+gpio:
+  irq: 4
+  led_red: 17
+  led_yellow: 27
+  led_green: 22
+  dht: 18
+  buzzer: 23
+
+http:
+  port: 8765
+
+sensor:
+  i2c_address: 0x03
+  indoor_mode: true
