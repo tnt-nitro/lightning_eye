@@ -18,7 +18,7 @@ Blitzsensor-Station für Raspberry Pi Zero WH mit AMS AS3935 (DFRobot SEN0290), 
 1. Pi OS 32-bit mit Desktop flashen, WLAN einrichten
 2. I2C aktivieren: `sudo raspi-config` → Interface Options → I2C → Enable
 3. Neustart
-4. Optional: `sudo apt install git python3-venv python3-tk i2c-tools libgpiod2`
+4. Optional: `sudo apt install git python3-venv python3-tk i2c-tools gpiod libgpiod3`
 
 ## Installation (WinSCP + PuTTY)
 
