@@ -1,14 +1,16 @@
 [Unit]
 Description=Lightning Eye Blitzsensor
-After=network-online.target
+After=network-online.target graphical-session.target
+Wants=graphical-session.target
 
 [Service]
 Type=simple
 WorkingDirectory=%h/lightning_eye
 Environment=DISPLAY=:0
-ExecStart=%h/lightning_eye/.venv/bin/python %h/lightning_eye/app/run.py
+Environment=XAUTHORITY=%h/.Xauthority
+ExecStart=%h/lightning_eye/start.sh
 Restart=always
-RestartSec=5
+RestartSec=10
 
 [Install]
 WantedBy=default.target

@@ -57,8 +57,7 @@ def ensure_venv() -> Path:
 
 
 def install_system_packages() -> None:
-    packages = ["git", "python3-venv",
-                "python3-pip", "python3-tk", "i2c-tools"]
+    packages = ["git", "python3-venv", "python3-pip", "python3-tk", "i2c-tools", "x11-utils"]
     if shutil.which("apt-get"):
         try:
             run(["sudo", "apt-get", "update"], check=False)
@@ -67,19 +66,38 @@ def install_system_packages() -> None:
             log("Hinweis: apt-Pakete manuell installieren (git, python3-venv, python3-tk, i2c-tools)")
 
 
-def write_systemd(python: Path) -> None:
+def setup_pi_permissions() -> None:
+    """Add pi user to gpio/i2c groups and enable systemd user linger."""
+    user = os.environ.get("USER", "pi")
+    for group in ("gpio", "i2c", "spi"):
+        run(["sudo", "usermod", "-aG", group, user], check=False)
+    run(["sudo", "loginctl", "enable-linger", user], check=False)
+
+
+def write_start_script() -> Path:
+    src = INSTALL_DIR / "start.sh"
+    if not src.exists():
+        log("WARN: start.sh fehlt im Repo")
+        return src
+    run(["chmod", "+x", str(src)], check=False)
+    return src
+
+
+def write_systemd(start_script: Path) -> None:
     SYSTEMD_DIR.mkdir(parents=True, exist_ok=True)
     service = f"""[Unit]
 Description=Lightning Eye Blitzsensor
-After=network-online.target
+After=network-online.target graphical-session.target
+Wants=graphical-session.target
 
 [Service]
 Type=simple
 WorkingDirectory={INSTALL_DIR}
 Environment=DISPLAY=:0
-ExecStart={python} {INSTALL_DIR / 'app' / 'run.py'}
+Environment=XAUTHORITY={Path.home()}/.Xauthority
+ExecStart={start_script}
 Restart=always
-RestartSec=5
+RestartSec=10
 
 [Install]
 WantedBy=default.target
@@ -90,13 +108,16 @@ WantedBy=default.target
     run(["systemctl", "--user", "enable", "lightning-eye.service"], check=False)
 
 
-def write_autostart(python: Path) -> None:
+def write_autostart(start_script: Path) -> None:
     AUTOSTART_DIR.mkdir(parents=True, exist_ok=True)
     desktop = f"""[Desktop Entry]
 Type=Application
 Name=Lightning Eye
-Exec={python} {INSTALL_DIR / 'app' / 'run.py'}
+Comment=Blitzsensor Station
+Exec={start_script}
+Terminal=false
 X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=8
 """
     (AUTOSTART_DIR / "lightning-eye.desktop").write_text(desktop, encoding="utf-8")
 
@@ -150,8 +171,10 @@ def main() -> None:
     python = ensure_venv()
 
     first_install = not MARKER.exists()
-    write_systemd(python)
-    write_autostart(python)
+    setup_pi_permissions()
+    start_script = write_start_script()
+    write_systemd(start_script)
+    write_autostart(start_script)
 
     if first_install:
         log("Erstinstallation — Boot-Sequenz und Neustart")
@@ -162,7 +185,8 @@ def main() -> None:
         return
 
     log("Installation vorhanden — starte Anwendung")
-    os.execv(str(python), [str(python), str(INSTALL_DIR / "app" / "run.py")])
+    os.chdir(INSTALL_DIR)
+    os.execv(str(python), [str(python), "-m", "app.run"])
 
 
 if __name__ == "__main__":

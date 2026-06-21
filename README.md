@@ -56,6 +56,38 @@ Automatisch alle 6 Stunden von GitHub. Wenn in den letzten 60 Minuten relevante 
 - CSV-Export über Menü **Details → Export / QR**
 - Status-URL: `http://<pi-ip>:8765/status`
 
+## Fehlerbehebung
+
+**Nach Reboot passiert nichts / keine LED:**
+
+1. Log prüfen:
+
+   ```bash
+   cat ~/lightning_eye/logs/startup.log
+   cat ~/lightning_eye/logs/app.log
+   ```
+
+2. Manuell starten:
+
+   ```bash
+   cd ~/lightning_eye && ./start.sh
+   ```
+
+   oder Update holen und starten:
+
+   ```bash
+   python3 ~/main.py
+   ```
+
+3. Service-Status:
+
+   ```bash
+   systemctl --user status lightning-eye.service
+   journalctl --user -u lightning-eye.service -n 50
+   ```
+
+**GPIO/I2C:** User `pi` muss in Gruppen `gpio` und `i2c` sein (Bootstrap richtet das ein; danach Reboot).
+
 ## Repository
 
 <https://github.com/tnt-nitro/lightning_eye>
