@@ -64,9 +64,11 @@ def install_system_packages() -> None:
     if shutil.which("apt-get"):
         try:
             run(["sudo", "apt-get", "update"], check=False)
-            result = run(["sudo", "apt-get", "install", "-y", *packages], check=False)
+            result = run(["sudo", "apt-get", "install",
+                         "-y", *packages], check=False)
             if result.returncode != 0:
-                run(["sudo", "apt-get", "install", "-y", "gpiod", "libgpiod2"], check=False)
+                run(["sudo", "apt-get", "install", "-y",
+                    "gpiod", "libgpiod2"], check=False)
         except (subprocess.CalledProcessError, FileNotFoundError):
             log("Hinweis: apt-Pakete manuell installieren (git, python3-venv, python3-tk, i2c-tools, gpiod)")
 
@@ -190,8 +192,12 @@ def main() -> None:
         return
 
     log("Installation vorhanden — starte Anwendung")
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":0")
+    env.setdefault("XAUTHORITY", str(Path.home() / ".Xauthority"))
+    env.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
     os.chdir(INSTALL_DIR)
-    os.execv(str(python), [str(python), "-m", "app.run"])
+    os.execve(str(python), [str(python), "-m", "app.run"], env)
 
 
 if __name__ == "__main__":

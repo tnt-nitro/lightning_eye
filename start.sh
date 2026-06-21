@@ -11,6 +11,11 @@ echo "========== $(date -Iseconds) =========="
 
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-${HOME}/.Xauthority}"
+export GPIOZERO_PIN_FACTORY="${GPIOZERO_PIN_FACTORY:-lgpio}"
+
+# Stop stale instance (crashed runs block HTTP port / GPIO)
+pkill -f "[.]venv/bin/python -m app.run" 2>/dev/null || true
+sleep 1
 
 # Wait up to 2 minutes for X/Wayland session
 for i in $(seq 1 60); do

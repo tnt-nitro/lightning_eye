@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-# Project root must be on sys.path before any app.* imports
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
+os.environ.setdefault("DISPLAY", ":0")
+os.environ.setdefault("XAUTHORITY", str(Path.home() / ".Xauthority"))
 
 from app.blocks import BlockManager
 from app.boot_reason import read_boot_reason, write_boot_reason
@@ -193,7 +197,6 @@ class Application:
 
         self.led.start()
         self.led.set_exclusive(LedState.READY)
-        self.dht.start()
 
         gpio = get_gpio(self.config)
         sensor_cfg = self.config.get("sensor", {})
@@ -214,6 +217,8 @@ class Application:
                 get_heartbeat=lambda: self.sensor.last_heartbeat,
                 reinit=self.sensor.reinit,
             ).start()
+
+        self.dht.start()
 
         http_port = int(self.config.get("http", {}).get("port", 8765))
         self._http = StatusServer(http_port, self._build_status)
@@ -255,7 +260,7 @@ class Application:
 
 def main() -> None:
     setup_logging()
-    logger.info("Lightning Eye starting (root=%s)", ROOT)
+    logger.info("Lightning Eye starting (root=%s, DISPLAY=%s)", ROOT, os.environ.get("DISPLAY"))
     try:
         app = Application()
         app.start()

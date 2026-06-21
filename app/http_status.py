@@ -39,11 +39,9 @@ class StatusServer:
                     self.send_response(404)
                     self.end_headers()
                     return
-                payload = json.dumps(
-                    handler_factory(), ensure_ascii=False).encode("utf-8")
+                payload = json.dumps(handler_factory(), ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
-                self.send_header(
-                    "Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
@@ -51,8 +49,11 @@ class StatusServer:
             def log_message(self, format, *args):  # noqa: A002
                 logger.debug("HTTP %s", args[0] if args else "")
 
+        class ReuseHTTPServer(ThreadingHTTPServer):
+            allow_reuse_address = True
+
         try:
-            self._httpd = ThreadingHTTPServer(("0.0.0.0", self.port), Handler)
+            self._httpd = ReuseHTTPServer(("0.0.0.0", self.port), Handler)
         except OSError as exc:
             logger.error("HTTP server failed on port %s: %s", self.port, exc)
             return

@@ -17,9 +17,9 @@ except ImportError:
     SMBus = None  # type: ignore
 
 try:
-    import RPi.GPIO as GPIO
+    from gpiozero import DigitalInputDevice
 except ImportError:
-    GPIO = None  # type: ignore
+    DigitalInputDevice = None  # type: ignore
 
 
 class InterruptType(IntEnum):
@@ -37,16 +37,10 @@ class LightningEvent:
     raw_energy: int | None
 
 
-# Register map (AMS AS3935)
-_REG_SENSE_L = 0x00
-_REG_SENSE_M = 0x01
-_REG_FLAGS = 0x03
-_REG_INT = 0x03
-_REG_S_LIG_L = 0x04
-_REG_S_LIG_M = 0x05
-_REG_LIGHTNING = 0x07
 _REG_DISTURBER = 0x01
-_REG_LCO_FBD = 0x12
+_REG_S_LIG_L = 0x04
+_REG_LIGHTNING = 0x07
+_REG_INT = 0x03
 _REG_TUNING = 0x3D
 
 
@@ -65,6 +59,7 @@ class AS3935:
         self.indoor = indoor
         self.on_event = on_event
         self._bus: SMBus | None = None
+        self._irq_input: DigitalInputDevice | None = None
         self._running = False
         self._thread: threading.Thread | None = None
         self._last_heartbeat = time.monotonic()
@@ -105,16 +100,12 @@ class AS3935:
             self._bus = None
 
     def _init_sensor(self) -> None:
-        # Power up and clear disturber
         self._write_reg(_REG_DISTURBER, 0x00)
         time.sleep(0.01)
-        # Set indoor/outdoor via REG_AFE_GB (0x00 bits) - use library approach
-        # REG0x00: [7:6] AFE, [5:1] noise floor, [0] power
-        afe_val = 0x12 if self.indoor else 0x0E  # indoor / outdoor preset
+        afe_val = 0x12 if self.indoor else 0x0E
         self._write_reg(0x00, afe_val)
-        # Minimum strikes 1, watchdog threshold
         self._write_reg(0x02, 0x24)
-        self._write_reg(0x01, 0x40)  # clear disturbers
+        self._write_reg(0x01, 0x40)
         logger.info("AS3935 initialized (indoor=%s)", self.indoor)
 
     def reinit(self) -> None:
@@ -136,7 +127,6 @@ class AS3935:
         try:
             with self._lock:
                 tuning = self._read_reg(_REG_TUNING) & 0x0F
-            # Expected tuning capacitance nibble; 0x0F often means not tuned
             if tuning in (0x05, 0x06, 0x07, 0x08, 0x09):
                 status = "OK"
             elif tuning == 0x0F:
@@ -153,11 +143,8 @@ class AS3935:
             interrupt = (flags >> 4) & 0x01
             if not interrupt:
                 return None
-            int_type = (flags >> 4) & 0x03
-            # Re-read with maskINT per datasheet flow
             int_val = self._read_reg(_REG_INT)
-            reason = InterruptType(int_val & 0x03) if (
-                int_val & 0x08) else None
+            reason = InterruptType(int_val & 0x03) if (int_val & 0x08) else None
 
         if reason == InterruptType.NOISE:
             return LightningEvent("noise", None, None, None, None)
@@ -179,14 +166,11 @@ class AS3935:
 
     @staticmethod
     def _raw_to_km(raw: int) -> float:
-        if raw == 0:
+        if raw <= 1:
             return 0.0
-        if raw == 1:
-            return 0.0
-        # AS3935 formula: d = (raw/2) - 1 km approximately for raw >= 2
         return max(0.0, (raw / 2.0) - 1.0)
 
-    def _handle_irq(self, channel: int) -> None:
+    def _handle_irq(self) -> None:
         try:
             event = self._parse_interrupt()
             self._last_heartbeat = time.monotonic()
@@ -196,37 +180,27 @@ class AS3935:
             logger.exception("IRQ handler error: %s", exc)
 
     def start(self) -> None:
-        if GPIO is None:
-            raise RuntimeError("RPi.GPIO not available")
+        if DigitalInputDevice is None:
+            raise RuntimeError("gpiozero not available")
         if self._running:
             return
         self.connect()
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(self.irq_pin, GPIO.IN)
-        GPIO.add_event_detect(
-            self.irq_pin,
-            GPIO.RISING,
-            callback=self._handle_irq,
-            bouncetime=200,
-        )
+        self._irq_input = DigitalInputDevice(self.irq_pin, pull_up=False)
+        self._irq_input.when_activated = self._handle_irq
         self._running = True
-        self._thread = threading.Thread(
-            target=self._poll_loop, daemon=True, name="as3935-poll")
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True, name="as3935-poll")
         self._thread.start()
         logger.info("AS3935 IRQ listener started on GPIO %s", self.irq_pin)
 
     def stop(self) -> None:
         self._running = False
-        if GPIO is not None:
-            try:
-                GPIO.remove_event_detect(self.irq_pin)
-            except Exception:
-                pass
+        if self._irq_input is not None:
+            self._irq_input.close()
+            self._irq_input = None
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2)
 
     def _poll_loop(self) -> None:
-        """Fallback polling to catch missed IRQs and refresh heartbeat."""
         while self._running:
             try:
                 event = self._parse_interrupt()

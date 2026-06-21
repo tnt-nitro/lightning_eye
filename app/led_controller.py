@@ -10,9 +10,9 @@ from enum import Enum, auto
 logger = logging.getLogger(__name__)
 
 try:
-    import RPi.GPIO as GPIO
+    from gpiozero import LED
 except ImportError:
-    GPIO = None  # type: ignore
+    LED = None  # type: ignore
 
 
 class LedState(Enum):
@@ -27,7 +27,6 @@ class LedState(Enum):
     ZONE_10KM = auto()
 
 
-# Priority: higher wins
 _STATE_PRIORITY = {
     LedState.READY: 0,
     LedState.ALERT: 10,
@@ -46,6 +45,9 @@ class LedController:
         self.red = red
         self.yellow = yellow
         self.green = green
+        self._red_led: LED | None = None
+        self._yellow_led: LED | None = None
+        self._green_led: LED | None = None
         self._states: set[LedState] = {LedState.READY}
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -56,26 +58,27 @@ class LedController:
         self._progress_callback = cb
 
     def start(self) -> None:
-        if GPIO is None:
-            logger.warning(
-                "GPIO unavailable, LED controller running in noop mode")
+        if LED is None:
+            logger.warning("GPIO unavailable, LED controller running in noop mode")
             return
-        GPIO.setmode(GPIO.BCM)
-        for pin in (self.red, self.yellow, self.green):
-            GPIO.setup(pin, GPIO.OUT)
-            GPIO.output(pin, GPIO.LOW)
+        self._red_led = LED(self.red)
+        self._yellow_led = LED(self.yellow)
+        self._green_led = LED(self.green)
         self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._run, daemon=True, name="led-controller")
+        self._thread = threading.Thread(target=self._run, daemon=True, name="led-controller")
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=2)
-        if GPIO is not None:
-            for pin in (self.red, self.yellow, self.green):
-                GPIO.output(pin, GPIO.LOW)
+        for led in (self._red_led, self._yellow_led, self._green_led):
+            if led is not None:
+                led.off()
+                led.close()
+        self._red_led = None
+        self._yellow_led = None
+        self._green_led = None
 
     def activate(self, state: LedState) -> None:
         with self._lock:
@@ -98,11 +101,11 @@ class LedController:
             return max(self._states, key=lambda s: _STATE_PRIORITY.get(s, 0))
 
     def _set_pins(self, red: bool, yellow: bool, green: bool) -> None:
-        if GPIO is None:
+        if self._red_led is None:
             return
-        GPIO.output(self.red, GPIO.HIGH if red else GPIO.LOW)
-        GPIO.output(self.yellow, GPIO.HIGH if yellow else GPIO.LOW)
-        GPIO.output(self.green, GPIO.HIGH if green else GPIO.LOW)
+        self._red_led.on() if red else self._red_led.off()
+        self._yellow_led.on() if yellow else self._yellow_led.off()
+        self._green_led.on() if green else self._green_led.off()
 
     def _sleep(self, seconds: float) -> bool:
         return not self._stop.wait(seconds)
@@ -133,8 +136,7 @@ class LedController:
     def _pattern_boot_install(self) -> None:
         progress = 0.5
         if self._progress_callback is not None:
-            # type: ignore[operator]
-            progress = float(self._progress_callback())
+            progress = float(self._progress_callback())  # type: ignore[operator]
         interval = max(0.2, 1.5 - progress)
         self._set_pins(False, True, False)
         if not self._sleep(interval):
@@ -202,7 +204,6 @@ class LedController:
             return
         self._set_pins(False, False, False)
         self._sleep(0.2)
-        # Yellow trend handled by parallel state in same loop iteration
         self._apply_yellow_overlay()
 
     def _pattern_red_10km(self) -> None:
@@ -226,6 +227,5 @@ class LedController:
 
 
 def run_boot_sequence(led: LedController, steps: int = 5) -> None:
-    """Run install boot LED patterns (blocking) — final phase only."""
     led.set_exclusive(LedState.BOOT_COMPLETE)
     time.sleep(20)
