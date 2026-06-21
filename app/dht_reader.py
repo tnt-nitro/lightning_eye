@@ -61,18 +61,22 @@ class DhtReader:
 
     def start(self) -> None:
         if _BACKEND is None:
-            logger.warning("No DHT22 backend available (install adafruit-circuitpython-dht)")
+            logger.warning(
+                "No DHT22 backend available (install adafruit-circuitpython-dht)")
             return
         try:
             if _BACKEND == "adafruit":
-                self._sensor = _adafruit_dht.DHT22(_board_pin(self.pin), use_pulseio=False)
+                # use_pulseio=True works reliably on Pi OS Trixie / Pi Zero WH
+                self._sensor = _adafruit_dht.DHT22(
+                    _board_pin(self.pin), use_pulseio=True)
             else:
                 self._sensor = _gpiozero_dht(self.pin)
         except Exception as exc:
             logger.warning("DHT22 init failed: %s", exc)
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, daemon=True, name="dht22")
+        self._thread = threading.Thread(
+            target=self._loop, daemon=True, name="dht22")
         self._thread.start()
         logger.info("DHT22 started on GPIO %s via %s", self.pin, _BACKEND)
 
@@ -94,10 +98,12 @@ class DhtReader:
         if self._sensor is None:
             return None, None
         if _BACKEND == "adafruit":
-            try:
-                return self._sensor.temperature, self._sensor.humidity
-            except RuntimeError:
-                return None, None
+            for _ in range(3):
+                try:
+                    return self._sensor.temperature, self._sensor.humidity
+                except RuntimeError:
+                    time.sleep(0.5)
+            return None, None
         temp = self._sensor.temperature
         hum = self._sensor.humidity
         return temp, hum
