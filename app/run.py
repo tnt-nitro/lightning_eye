@@ -71,6 +71,10 @@ class Application:
         self.buzzer = BuzzerController(gpio["buzzer"])
         self.dht = DhtReader(gpio["dht"])
         self.sensor: AS3935 | None = None
+        self._sensor_start_error: str | None = None
+        self._sensor_offline = False
+        self._sensor_check_ts = 0.0
+        self._sensor_status_cache = self._empty_sensor_status()
         self._alert_until: datetime | None = None
         self._in_zone_10 = False
         self._in_zone_20 = False
@@ -180,8 +184,84 @@ class Application:
         self._in_zone_10 = False
         self._in_zone_20 = False
 
+    def _empty_sensor_status(self) -> dict:
+        addr = parse_int(self.config.get(
+            "sensor", {}).get("i2c_address"), 0x03)
+        return {
+            "ok": False,
+            "label": "Nicht erreichbar",
+            "detail": "Noch nicht geprüft",
+            "tuning_raw": None,
+            "tuning_status": None,
+            "i2c_address": f"0x{addr:02X}",
+        }
+
+    def _sensor_i2c_address(self) -> str:
+        if self.sensor is not None:
+            return f"0x{self.sensor.address:02X}"
+        addr = parse_int(self.config.get(
+            "sensor", {}).get("i2c_address"), 0x03)
+        return f"0x{addr:02X}"
+
+    def _update_sensor_status_cache(self) -> None:
+        if self.sensor is None:
+            detail = self._sensor_start_error or "Sensor nicht gestartet"
+            self._sensor_status_cache = {
+                "ok": False,
+                "label": "Nicht erreichbar",
+                "detail": detail,
+                "tuning_raw": None,
+                "tuning_status": None,
+                "i2c_address": self._sensor_i2c_address(),
+            }
+            return
+
+        probe = self.sensor.check_connection()
+        ok = probe["ok"] and not self._sensor_offline
+        detail = probe.get("detail")
+        if ok:
+            detail = None
+        elif self._sensor_offline:
+            detail = detail or "Watchdog: keine Antwort nach mehreren Versuchen"
+        self._sensor_status_cache = {
+            "ok": ok,
+            "label": "OK" if ok else "Nicht erreichbar",
+            "detail": detail,
+            "tuning_raw": probe.get("tuning_raw"),
+            "tuning_status": probe.get("tuning_status"),
+            "i2c_address": self._sensor_i2c_address(),
+        }
+
+    def get_sensor_status(self) -> dict:
+        now = time.monotonic()
+        if now - self._sensor_check_ts >= 5.0:
+            self._sensor_check_ts = now
+            self._update_sensor_status_cache()
+        return dict(self._sensor_status_cache)
+
+    def _on_sensor_offline(self) -> None:
+        self._sensor_offline = True
+        self._sensor_check_ts = 0.0
+        logger.critical("AS3935 als offline markiert")
+
+    def _on_sensor_recovered(self) -> None:
+        self._sensor_offline = False
+        self._sensor_check_ts = 0.0
+        logger.info("AS3935 wieder erreichbar")
+
+    def _in_alert_state(self) -> bool:
+        return (
+            self._alert_until is not None
+            or self._in_zone_10
+            or self._in_zone_20
+            or self._app_label in ("ALERT", "GEWITTER < 10 km", "GEWITTER < 20 km")
+        )
+
     def get_app_state(self) -> dict:
+        sensor_ok = self.get_sensor_status()["ok"]
         with self._state_lock:
+            if not sensor_ok and not self._in_alert_state():
+                return {"label": "SENSOR FEHLT", "color": "#ff9800"}
             return {"label": self._app_label, "color": self._app_color}
 
     def _build_status(self) -> dict:
@@ -190,6 +270,7 @@ class Application:
         return {
             **snap,
             "app_state": self.get_app_state(),
+            "sensor": self.get_sensor_status(),
             "environment": {"temp_c": temp, "humidity_pct": hum},
             "version": self.version,
         }
@@ -212,14 +293,24 @@ class Application:
         )
         try:
             self.sensor.start()
+            self._update_sensor_status_cache()
+            logger.info(
+                "AS3935 erreichbar @ %s, Tuning: %s",
+                self._sensor_i2c_address(),
+                self._sensor_status_cache.get("tuning_status"),
+            )
         except Exception as exc:
+            self._sensor_start_error = str(exc)
             logger.error("Sensor start failed: %s", exc, exc_info=True)
             self.sensor = None
+            self._update_sensor_status_cache()
 
         if self.sensor:
             Watchdog(
                 get_heartbeat=lambda: self.sensor.last_heartbeat,
                 reinit=self.sensor.reinit,
+                on_offline=self._on_sensor_offline,
+                on_recovered=self._on_sensor_recovered,
             ).start()
 
         self.dht.start()
@@ -249,6 +340,7 @@ class Application:
             config=self.config,
             version=self.version,
             get_app_state=self.get_app_state,
+            get_sensor_status=self.get_sensor_status,
             sensor=self.sensor,
         )
         try:

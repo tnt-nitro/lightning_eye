@@ -17,14 +17,19 @@ class Watchdog:
         reinit: Callable[[], None],
         timeout_seconds: float = 30.0,
         max_retries: int = 3,
+        on_offline: Callable[[], None] | None = None,
+        on_recovered: Callable[[], None] | None = None,
     ) -> None:
         self.get_heartbeat = get_heartbeat
         self.reinit = reinit
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
+        self.on_offline = on_offline
+        self.on_recovered = on_recovered
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._failures = 0
+        self._offline = False
 
     def start(self) -> None:
         self._stop.clear()
@@ -53,6 +58,14 @@ class Watchdog:
                     logger.error("Watchdog reinit failed: %s", exc)
                 if self._failures >= self.max_retries:
                     logger.critical("Watchdog max retries reached")
+                    if not self._offline:
+                        self._offline = True
+                        if self.on_offline:
+                            self.on_offline()
             else:
+                if self._offline:
+                    self._offline = False
+                    if self.on_recovered:
+                        self.on_recovered()
                 self._failures = 0
             self._stop.wait(5)

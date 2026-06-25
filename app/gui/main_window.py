@@ -26,6 +26,7 @@ class MainWindow:
         config: dict,
         version: str,
         get_app_state: Callable[[], dict[str, Any]],
+        get_sensor_status: Callable[[], dict[str, Any]],
         sensor: Any = None,
     ) -> None:
         self.db = db
@@ -34,6 +35,7 @@ class MainWindow:
         self.config = config
         self.version = version
         self.get_app_state = get_app_state
+        self.get_sensor_status = get_sensor_status
         self.sensor = sensor
 
         self.root = tk.Tk()
@@ -62,7 +64,11 @@ class MainWindow:
         details.add_command(
             label="System",
             command=lambda: open_system_info(
-                self.root, self.config, self.sensor, self.version),
+                self.root,
+                self.config,
+                self.get_sensor_status,
+                self.version,
+            ),
         )
         details.add_command(
             label="Export / QR",
@@ -106,6 +112,10 @@ class MainWindow:
         self.lbl_env = tk.Label(self.root, fg="#81d4fa",
                                 bg="#0f0f1a", font=("Segoe UI", 16))
         self.lbl_env.pack(anchor=tk.W, **pad)
+
+        self.lbl_sensor = tk.Label(
+            self.root, fg="#aaa", bg="#0f0f1a", font=("Segoe UI", 14))
+        self.lbl_sensor.pack(anchor=tk.W, padx=20)
 
         tk.Label(self.root, text="Entfernung (letzte 20 relevante)", fg="#888", bg="#0f0f1a", font=("Segoe UI", 12)).pack(
             anchor=tk.W, padx=20
@@ -151,6 +161,18 @@ class MainWindow:
         temp_s = f"{temp:.1f}°C" if temp is not None else "—"
         hum_s = f"{hum:.0f}% rF" if hum is not None else "—"
         self.lbl_env.config(text=f"Umgebung: {temp_s}  ·  {hum_s}")
+
+        sensor = self.get_sensor_status()
+        sensor_color = "#4caf50" if sensor.get("ok") else "#ff9800"
+        sensor_line = (
+            f"AS3935 @ {sensor.get('i2c_address', '?')}: "
+            f"{sensor.get('label', 'Unbekannt')}"
+        )
+        if sensor.get("tuning_status") and sensor.get("ok"):
+            sensor_line += f" · Tuning: {sensor['tuning_status']}"
+        if sensor.get("detail"):
+            sensor_line += f" — {sensor['detail']}"
+        self.lbl_sensor.config(text=sensor_line, fg=sensor_color)
 
         self.sparkline.set_values(snap.get("sparkline", []))
         self.lbl_version.config(text=f"v{self.version}")

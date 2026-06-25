@@ -7,10 +7,10 @@ import subprocess
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
+from typing import Callable
 
 from app.boot_reason import read_boot_reason
 from app.config_loader import get_data_dir
-from app.sensor_as3935 import AS3935
 
 
 def _cpu_temp() -> str:
@@ -65,16 +65,15 @@ def _uptime() -> str:
 def open_system_info(
     parent: tk.Tk,
     config: dict,
-    sensor: AS3935 | None,
+    get_sensor_status: Callable[[], dict],
     version: str,
 ) -> None:
     win = tk.Toplevel(parent)
     win.title("System")
     win.configure(bg="#16213e")
-    win.geometry("550x400")
+    win.geometry("550x420")
 
-    tuning = sensor.get_tuning_status() if sensor else {
-        "status": "n/a", "tuning_raw": None}
+    sensor = get_sensor_status()
     boot = read_boot_reason(get_data_dir(config))
 
     lines = [
@@ -83,10 +82,22 @@ def open_system_info(
         f"CPU-Temp:     {_cpu_temp()}",
         f"WLAN:         {_wifi_signal()}",
         f"Uptime:       {_uptime()}",
-        f"Tuning AS3935: {tuning['status']} (raw={tuning.get('tuning_raw')})",
+        (
+            f"Blitzsensor:  AS3935 @ {sensor.get('i2c_address', '?')} — "
+            f"{sensor.get('label', 'Unbekannt')}"
+        ),
+    ]
+    if sensor.get("detail"):
+        lines.append(f"  I2C-Fehler:   {sensor['detail']}")
+    if sensor.get("tuning_status"):
+        lines.append(
+            f"  Tuning:       {sensor['tuning_status']} "
+            f"(raw={sensor.get('tuning_raw')})"
+        )
+    lines.extend([
         f"Boot-Ursache: {boot.get('reason', 'unknown')}",
         f"Boot-Zeit:    {boot.get('ts', '-')}",
-    ]
+    ])
 
     frame = tk.Frame(win, bg="#16213e", padx=16, pady=16)
     frame.pack(fill=tk.BOTH, expand=True)

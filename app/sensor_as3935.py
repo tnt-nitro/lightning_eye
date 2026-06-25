@@ -64,10 +64,15 @@ class AS3935:
         self._thread: threading.Thread | None = None
         self._last_heartbeat = time.monotonic()
         self._lock = threading.Lock()
+        self._reachable = False
 
     @property
     def last_heartbeat(self) -> float:
         return self._last_heartbeat
+
+    @property
+    def reachable(self) -> bool:
+        return self._reachable
 
     def _read_reg(self, reg: int) -> int:
         if self._bus is None:
@@ -84,6 +89,35 @@ class AS3935:
         high = self._read_reg(reg_low + 1)
         return (high << 8) | low
 
+    def check_connection(self) -> dict:
+        """Probe I2C by reading the tuning register."""
+        try:
+            with self._lock:
+                raw = self._read_reg(_REG_TUNING)
+            tuning = raw & 0x0F
+            if tuning in (0x05, 0x06, 0x07, 0x08, 0x09):
+                status = "OK"
+            elif tuning == 0x0F:
+                status = "Nicht abgestimmt"
+            else:
+                status = "Prüfen"
+            self._reachable = True
+            self._last_heartbeat = time.monotonic()
+            return {
+                "ok": True,
+                "tuning_raw": tuning,
+                "tuning_status": status,
+                "detail": None,
+            }
+        except Exception as exc:
+            self._reachable = False
+            return {
+                "ok": False,
+                "tuning_raw": None,
+                "tuning_status": None,
+                "detail": str(exc),
+            }
+
     def connect(self) -> None:
         if SMBus is None:
             raise RuntimeError("smbus2 not available")
@@ -91,6 +125,13 @@ class AS3935:
             self._bus.close()
         self._bus = SMBus(self.i2c_bus)
         self._init_sensor()
+        probe = self.check_connection()
+        if not probe["ok"]:
+            self._bus.close()
+            self._bus = None
+            detail = probe.get("detail") or "Unbekannter Fehler"
+            raise RuntimeError(
+                f"AS3935 nicht erreichbar (I2C 0x{self.address:02X}): {detail}")
         self._last_heartbeat = time.monotonic()
 
     def close(self) -> None:
@@ -98,6 +139,7 @@ class AS3935:
         if self._bus is not None:
             self._bus.close()
             self._bus = None
+        self._reachable = False
 
     def _init_sensor(self) -> None:
         self._write_reg(_REG_DISTURBER, 0x00)
@@ -114,28 +156,17 @@ class AS3935:
             self.connect()
 
     def ping(self) -> bool:
-        try:
-            with self._lock:
-                val = self._read_reg(_REG_TUNING)
-            self._last_heartbeat = time.monotonic()
-            return val is not None
-        except Exception as exc:
-            logger.error("AS3935 ping failed: %s", exc)
-            return False
+        return self.check_connection()["ok"]
 
     def get_tuning_status(self) -> dict:
-        try:
-            with self._lock:
-                tuning = self._read_reg(_REG_TUNING) & 0x0F
-            if tuning in (0x05, 0x06, 0x07, 0x08, 0x09):
-                status = "OK"
-            elif tuning == 0x0F:
-                status = "Nicht abgestimmt"
-            else:
-                status = "Prüfen"
-            return {"tuning_raw": tuning, "status": status}
-        except Exception as exc:
-            return {"tuning_raw": None, "status": f"Fehler: {exc}"}
+        probe = self.check_connection()
+        if not probe["ok"]:
+            detail = probe.get("detail") or "Unbekannter Fehler"
+            return {"tuning_raw": None, "status": f"Fehler: {detail}"}
+        return {
+            "tuning_raw": probe["tuning_raw"],
+            "status": probe["tuning_status"],
+        }
 
     def _parse_interrupt(self) -> LightningEvent | None:
         with self._lock:
