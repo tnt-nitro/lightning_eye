@@ -14,6 +14,7 @@ from app.gui.menus.export_dialog import open_export_dialog
 from app.gui.menus.statistics import open_statistics
 from app.gui.menus.system_info import open_system_info
 from app.gui.sparkline import Sparkline
+from app.http_status import get_local_ip
 from app.stats import format_duration, snapshot
 
 
@@ -123,6 +124,10 @@ class MainWindow:
         self.sparkline = Sparkline(self.root, height=80)
         self.sparkline.pack(fill=tk.X, padx=20, pady=4)
 
+        self.lbl_ip = tk.Label(
+            self.root, fg="#555", bg="#0f0f1a", font=("Consolas", 10))
+        self.lbl_ip.pack(side=tk.BOTTOM, anchor=tk.SW, padx=12, pady=8)
+
         self.lbl_version = tk.Label(
             self.root, fg="#555", bg="#0f0f1a", font=("Segoe UI", 10))
         self.lbl_version.pack(side=tk.BOTTOM, anchor=tk.SE, padx=12, pady=8)
@@ -175,6 +180,7 @@ class MainWindow:
         self.lbl_sensor.config(text=sensor_line, fg=sensor_color)
 
         self.sparkline.set_values(snap.get("sparkline", []))
+        self.lbl_ip.config(text=f"IP: {get_local_ip()}")
         self.lbl_version.config(text=f"v{self.version}")
 
         self.root.after(1000, self.refresh)
