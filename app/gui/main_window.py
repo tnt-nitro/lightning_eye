@@ -87,6 +87,15 @@ class MainWindow:
 
     def _build_ui(self) -> None:
         pad = {"padx": 20, "pady": 8}
+        self.lbl_ip = tk.Label(
+            self.root,
+            text=f"IP: {get_local_ip()}",
+            fg="#555",
+            bg="#0f0f1a",
+            font=("Consolas", 10),
+        )
+        self.lbl_ip.pack(anchor=tk.NW, padx=20, pady=(8, 0))
+
         self.lbl_status = tk.Label(
             self.root, fg="#4caf50", bg="#0f0f1a", font=("Segoe UI", 22, "bold"))
         self.lbl_status.pack(anchor=tk.W, **pad)
@@ -123,10 +132,6 @@ class MainWindow:
         )
         self.sparkline = Sparkline(self.root, height=80)
         self.sparkline.pack(fill=tk.X, padx=20, pady=4)
-
-        self.lbl_ip = tk.Label(
-            self.root, fg="#555", bg="#0f0f1a", font=("Consolas", 10))
-        self.lbl_ip.pack(side=tk.BOTTOM, anchor=tk.SW, padx=12, pady=8)
 
         self.lbl_version = tk.Label(
             self.root, fg="#555", bg="#0f0f1a", font=("Segoe UI", 10))
@@ -180,7 +185,6 @@ class MainWindow:
         self.lbl_sensor.config(text=sensor_line, fg=sensor_color)
 
         self.sparkline.set_values(snap.get("sparkline", []))
-        self.lbl_ip.config(text=f"IP: {get_local_ip()}")
         self.lbl_version.config(text=f"v{self.version}")
 
         self.root.after(1000, self.refresh)
