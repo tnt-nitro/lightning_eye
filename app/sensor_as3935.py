@@ -170,18 +170,16 @@ class AS3935:
 
     def _parse_interrupt(self) -> LightningEvent | None:
         with self._lock:
-            flags = self._read_reg(_REG_INT)
-            interrupt = (flags >> 4) & 0x01
-            if not interrupt:
-                return None
-            int_val = self._read_reg(_REG_INT)
-            reason = InterruptType(int_val & 0x03) if (
-                int_val & 0x08) else None
+            int_val = self._read_reg(_REG_INT) & 0x0F
 
-        if reason == InterruptType.NOISE:
+        if int_val == 0:
+            return None
+        if int_val & 0x01:
             return LightningEvent("noise", None, None, None, None)
-        if reason == InterruptType.DISTURBER:
+        if int_val & 0x04:
             return LightningEvent("disturber", None, None, None, None)
+        if not (int_val & 0x08):
+            return None
 
         with self._lock:
             raw_energy = self._read_reg16(_REG_S_LIG_L)
@@ -204,6 +202,7 @@ class AS3935:
 
     def _handle_irq(self) -> None:
         try:
+            time.sleep(0.002)
             event = self._parse_interrupt()
             self._last_heartbeat = time.monotonic()
             if event and self.on_event:
